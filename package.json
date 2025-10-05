@@ -9,7 +9,13 @@
     "start:prod": "NODE_ENV=production node -r dotenv/config server.js dotenv_config_path=.env.production",
     "dev": "NODE_ENV=development nodemon -r dotenv/config server.js dotenv_config_path=.env.development",
     "test": "node test-client.js",
-    "test:webhook": "node test-webhook.js"
+    "test:webhook": "node test-webhook.js",
+    "test:simple": "node test-rate-limit-retry.js simple",
+    "test:load": "node test-rate-limit-retry.js load",
+    "test:stress": "node test-rate-limit-retry.js stress",
+    "test:load-100": "node test-rate-limit-retry.js load 100 10",
+    "test:load-500": "node test-rate-limit-retry.js load 500 20",
+    "test:stress-2000": "node test-rate-limit-retry.js stress 2000 100"
   },
   "keywords": [
     "dialpad",
@@ -18,7 +24,9 @@
     "call-logs",
     "real-time",
     "jwt",
-    "socket.io"
+    "socket.io",
+    "rate-limiting",
+    "retry-logic"
   ],
   "author": "",
   "license": "MIT",

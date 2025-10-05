@@ -20,6 +20,7 @@ Dialpad → HTTP Webhook → Server → WebSocket → Your Application
 - ✅ **WebSocket Broadcasting** - Real-time event distribution using Socket.IO
 - ✅ **JWT Verification** - Secure webhook authentication (HS256)
 - ✅ **Rate Limiting** - Protects against abuse (1200 req/min)
+- ✅ **Automatic Retry** - Exponential backoff on rate limits
 - ✅ **Event Subscriptions** - Clients can subscribe to specific event types
 - ✅ **Connection Tracking** - Monitor connected clients
 - ✅ **Auto-Reconnection** - Clients automatically reconnect
@@ -61,18 +62,65 @@ Server will start on port 3000 (configurable).
 
 ### 4. Test It!
 
-**Terminal 1 - Start WebSocket Client:**
+**Quick verification:**
 ```bash
-npm test
+npm run test:simple
 ```
 
-**Terminal 2 - Send Test Webhook:**
+**Load test with retry:**
 ```bash
-npm run test:webhook call.created
+npm run test:load
 ```
 
-**Browser Client:**
-Open `client.html` in your browser!
+**Stress test (triggers rate limits):**
+```bash
+npm run test:stress
+```
+
+📖 **Full testing guide:** [TESTING.md](TESTING.md)
+
+## 🧪 Testing Features
+
+### Built-in Test Scripts
+
+| Command | Requests | Purpose |
+|---------|----------|---------|
+| `npm run test:simple` | 10 | Quick verification |
+| `npm run test:load` | 100 | Normal load with retry |
+| `npm run test:load-500` | 500 | Heavy load test |
+| `npm run test:stress` | 1500 | Stress test (triggers rate limits) |
+| `npm run test:stress-2000` | 2000 | Extreme stress test |
+
+**Features tested:**
+- ✅ Rate limit handling
+- ✅ Exponential backoff retry (1s → 2s → 4s → 8s → 16s)
+- ✅ WebSocket broadcast verification
+- ✅ Server stability under load
+- ✅ Concurrent request handling
+- ✅ Recovery after rate limits
+
+**Example output:**
+```
+🚀 Starting Load Test with Rate Limit & Retry
+📊 Progress: 100/100 (100.0%) | ✅ 98 | ❌ 2 | ⚠️  15 rate limited
+
+📊 TEST RESULTS
+Request Statistics:
+  ✅ Successful:     98 (98.0%)
+  ❌ Failed:         2 (2.0%)
+  ⚠️  Rate limited:  15
+  🔄 Retry attempts: 13
+  
+WebSocket Verification:
+  Events received:   98
+  Match rate:        100.0%
+  
+Performance:
+  Throughput:        8.10 req/s
+  Avg response:      45ms
+```
+
+See [TESTING.md](TESTING.md) for detailed testing guide.
 
 ## 📡 WebSocket Client Examples
 
@@ -167,13 +215,6 @@ sio.wait()
 #### POST `/webhook`
 Receives webhooks from Dialpad (JWT-signed).
 
-**Headers:**
-```
-Content-Type: text/plain
-```
-
-**Body:** JWT token from Dialpad
-
 **Response:**
 ```json
 {
@@ -210,14 +251,7 @@ Get connected WebSocket clients info.
 ```json
 {
   "total": 5,
-  "clients": [
-    {
-      "id": "socket-id-123",
-      "connectedAt": "2025-10-05T00:00:00.000Z",
-      "eventsReceived": 42,
-      "uptime": 120
-    }
-  ]
+  "clients": [...]
 }
 ```
 
@@ -227,253 +261,127 @@ Get connected WebSocket clients info.
 
 ```bash
 # Server
-NODE_ENV=development          # development | production
-PORT=3000                     # Server port
+NODE_ENV=development
+PORT=3000
 
 # Dialpad Webhook
-DIALPAD_WEBHOOK_SECRET=secret # Must match Dialpad webhook secret
+DIALPAD_WEBHOOK_SECRET=secret
 
 # WebSocket
-CORS_ORIGIN=*                 # CORS origin (* for dev, domain for prod)
+CORS_ORIGIN=*
 
 # Features
-DEBUG=true                    # Enable debug logging
-RATE_LIMIT_MAX=1200          # Max requests per minute
+DEBUG=true
+RATE_LIMIT_MAX=1200
 ```
 
 ### Dialpad Webhook Setup
 
 1. Go to [Dialpad Developer Portal](https://www.dialpad.com/developers/)
-2. Create a new webhook:
-   - **URL:** `https://your-domain.com/webhook`
-   - **Secret:** Your `DIALPAD_WEBHOOK_SECRET`
-   - **Algorithm:** HS256
-
-3. Subscribe to events:
-   - ✅ call.created
-   - ✅ call.updated
-   - ✅ call.ended
-   - ✅ sms.inbound
-   - ✅ sms.outbound
-   - ✅ voicemail.created
-   - ✅ contact.created
-   - ✅ contact.updated
-
-## 🧪 Testing
-
-### Test WebSocket Client
-
-```bash
-# Start client (waits for events)
-npm test
-
-# Or with custom server URL
-WEBSOCKET_URL=http://localhost:3000 npm test
-```
-
-### Test Webhook Endpoint
-
-```bash
-# Send test call.created event
-npm run test:webhook call.created
-
-# Send test call.ended event
-node test-webhook.js call.ended
-
-# Send test SMS event
-node test-webhook.js sms.inbound
-```
-
-### Browser Client
-
-Open `client.html` in your browser:
-1. Enter server URL (default: http://localhost:3000)
-2. Click "Connect"
-3. Events will appear in real-time!
+2. Create webhook: `https://your-domain.com/webhook`
+3. Secret: Your `DIALPAD_WEBHOOK_SECRET`
+4. Algorithm: HS256
+5. Subscribe to events
 
 ## 📊 Event Format
 
-All events follow this format:
-
 ```javascript
 {
-  type: 'call.created',  // Event type
-  data: {                // Event data from Dialpad
+  type: 'call.created',
+  data: {
     call_id: '12345',
     direction: 'inbound',
     from_number: '+1234567890',
     to_number: '+0987654321',
     // ... more fields
   },
-  timestamp: '2025-10-05T00:00:00.000Z'  // When event was received
+  timestamp: '2025-10-05T00:00:00.000Z'
 }
 ```
 
 ## 🚀 Production Deployment
 
-### Option 1: PM2
+### PM2
 
 ```bash
-# Install dependencies
-npm install --production
-
-# Configure environment
-cp .env.production .env
-nano .env  # Set your production values
-
-# Install PM2
 npm install -g pm2
-
-# Start server
 pm2 start server.js --name dialpad-websocket
-
-# Setup auto-restart
 pm2 startup
 pm2 save
-
-# Monitor
-pm2 monit
 ```
 
-### Option 2: Docker
-
-```dockerfile
-FROM node:18-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci --only=production
-COPY . .
-EXPOSE 3000
-CMD ["node", "server.js"]
-```
-
-```bash
-docker build -t dialpad-websocket .
-docker run -p 3000:3000 --env-file .env.production dialpad-websocket
-```
-
-### Nginx Configuration (for WebSocket)
+### Nginx (WebSocket Support)
 
 ```nginx
-server {
-    listen 80;
-    server_name your-domain.com;
-
-    location / {
-        proxy_pass http://localhost:3000;
-        proxy_http_version 1.1;
-        
-        # WebSocket support
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        
-        # Timeouts
-        proxy_connect_timeout 7d;
-        proxy_send_timeout 7d;
-        proxy_read_timeout 7d;
-    }
+location / {
+    proxy_pass http://localhost:3000;
+    proxy_http_version 1.1;
+    
+    # WebSocket support
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    
+    # Timeouts
+    proxy_connect_timeout 7d;
+    proxy_send_timeout 7d;
+    proxy_read_timeout 7d;
 }
 ```
 
 ## 🔒 Security
 
-- ✅ **JWT Verification** - All webhooks verified with HS256
-- ✅ **Rate Limiting** - 1200 requests/minute max
-- ✅ **CORS** - Configurable origin restrictions
-- ✅ **HTTPS** - Use SSL/TLS in production
-- ✅ **Secret Management** - Never commit secrets to git
-
-**Security Checklist:**
-- [ ] Use HTTPS in production
-- [ ] Set strong `DIALPAD_WEBHOOK_SECRET`
-- [ ] Configure `CORS_ORIGIN` to your domain
-- [ ] Enable firewall rules
-- [ ] Set `DEBUG=false` in production
-- [ ] Regular dependency updates
+- ✅ **JWT Verification** - HS256 only
+- ✅ **Rate Limiting** - 1200 req/min
+- ✅ **CORS** - Configurable
+- ✅ **HTTPS** - Production ready
+- ✅ **Auto-retry** - Handles failures
 
 ## 📈 Monitoring
 
-### Check Server Health
-
 ```bash
+# Health check
 curl http://localhost:3000/health
-```
 
-### Check Connected Clients
-
-```bash
+# Connected clients
 curl http://localhost:3000/clients
-```
 
-### View PM2 Logs
-
-```bash
-pm2 logs dialpad-websocket
+# PM2 monitoring
 pm2 monit
+pm2 logs dialpad-websocket
 ```
-
-## 🐛 Troubleshooting
-
-### WebSocket Won't Connect
-
-```bash
-# Check if server is running
-curl http://localhost:3000/health
-
-# Check firewall
-sudo ufw status
-
-# Check CORS settings
-# Make sure CORS_ORIGIN includes your client's domain
-```
-
-### Webhook Not Working
-
-```bash
-# Test webhook locally
-npm run test:webhook call.created
-
-# Check logs
-pm2 logs dialpad-websocket --err
-
-# Verify secret matches Dialpad
-echo $DIALPAD_WEBHOOK_SECRET
-```
-
-### Rate Limit Issues
-
-Server handles rate limits gracefully - warnings are batched every 5 seconds.
 
 ## 📚 Use Cases
 
 - **Real-time Dashboards** - Live call metrics
-- **Call Notifications** - Instant alerts for new calls
-- **CRM Integration** - Auto-update customer records
-- **Analytics** - Real-time call analytics
-- **Call Center Monitoring** - Live agent activity
-- **Custom Applications** - Any real-time event handling
+- **Call Notifications** - Instant alerts
+- **CRM Integration** - Auto-update records
+- **Analytics** - Real-time insights
+- **Call Center** - Live monitoring
+- **Custom Apps** - Event-driven workflows
 
 ## 📦 Project Structure
 
 ```
 .
-├── server.js              # Main WebSocket server
-├── test-client.js         # Node.js client example
-├── test-webhook.js        # Webhook testing script
-├── client.html            # Browser client UI
-├── package.json           # Dependencies
-├── .env.development       # Dev environment
-├── .env.production        # Prod environment
-└── README.md              # This file
+├── server.js                    # Main WebSocket server
+├── test-client.js               # Node.js client
+├── test-webhook.js              # Webhook test
+├── test-rate-limit-retry.js     # Load/stress testing
+├── client.html                  # Browser client UI
+├── package.json                 # Dependencies
+├── TESTING.md                   # Testing guide
+└── README.md                    # This file
 ```
+
+## 📖 Documentation
+
+- **[TESTING.md](TESTING.md)** - Comprehensive testing guide
+- **[Dialpad Docs](https://developers.dialpad.com/)** - Dialpad API
+- **[Socket.IO Docs](https://socket.io/docs/)** - WebSocket library
 
 ## 🤝 Contributing
 
-Pull requests are welcome! For major changes, please open an issue first.
+Pull requests welcome! Open an issue for major changes.
 
 ## 📄 License
 
@@ -482,9 +390,10 @@ MIT
 ## 🔗 Links
 
 - **Repository:** https://github.com/iceman-vici/websocket-dp-call-logs
-- **Dialpad Docs:** https://developers.dialpad.com/
-- **Socket.IO Docs:** https://socket.io/docs/
+- **Webhook Version:** https://github.com/iceman-vici/webhook-dp-call-logs
 
 ---
 
 **Ready for real-time Dialpad events! 🎉**
+
+Start with `npm run test:simple` to verify everything works!
